@@ -1,0 +1,10 @@
+language: go
+
+go:
+  - 1.7.5
+
+os:
+  - linux
+
+script:
+  - go build main.go
