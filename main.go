@@ -4,6 +4,7 @@ import (
 	"flag"
 	"github.com/JulienBalestra/netns/netns"
 	"github.com/golang/glog"
+	"os"
 )
 
 func main() {
@@ -13,16 +14,18 @@ func main() {
 
 	if *name == "" {
 		glog.Errorf("provide a netns -name")
-		return
+		os.Exit(1)
 	}
 
 	err := netns.InitNetworkNamespaceDirectory()
 	if err != nil {
 		glog.Errorf("exiting on error during init: %q", err)
+		os.Exit(2)
 	}
 	err = netns.CreateNetworkNamespace(*name)
 	if err != nil {
 		glog.Errorf("exiting on error during namespace creation: %q", err)
+		os.Exit(3)
 	}
 	return
 }
