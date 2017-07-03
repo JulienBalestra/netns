@@ -14,6 +14,7 @@ const (
 
 	switchErrNil = iota
 	switchErrCloneNewNamespace
+	switchErrGetOriginNamespace
 	switchErrGetNewNamespace
 	switchErrMountNewNamespace
 )
@@ -50,22 +51,32 @@ func createNetworkNamespaceTarget(path string) error {
 }
 
 // Get the current network namespace absolute FS path
-func getCurrentNetworkNamespace() (string, error) {
-	netNamespacePath := fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
-	_, err := os.Stat(netNamespacePath)
+func getCurrentNetworkNamespace() (netnsPath string, netnsInode string, err error) {
+	netnsPath = fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
+	netnsInode, err = os.Readlink(netnsPath)
 	if err != nil {
-		glog.Errorf("fail to get current networkNamespace %q: %s", netNamespacePath, err)
-		return netNamespacePath, err
+		glog.Errorf("fail to get current networkNamespace %q: %s", netnsPath, err)
+		return netnsPath, netnsInode, err
 	}
-	return netNamespacePath, nil
+	return netnsPath, netnsInode, nil
 }
 
 // This function needs to run as Routine to creates a new network namespace without continue to use it
 // Errors are sent to channel
 func switchNetworkNamespace(target string, errChan chan<- switchError) {
 	var switchErr switchError
-	var newNetworkNamespace string
+	var newNetNsPath, newNetNsInode, originNetNsPath, originNetNsInode string
+
+	// Avoid changing thread
 	runtime.LockOSThread()
+
+	originNetNsPath, originNetNsInode, switchErr.err = getCurrentNetworkNamespace()
+	if switchErr.err != nil {
+		switchErr.errNo = switchErrGetOriginNamespace
+		errChan <- switchErr
+		return
+	}
+	glog.V(4).Infof("origin OSThread netns: %q -> %q", originNetNsPath, originNetNsInode)
 
 	switchErr.err = unix.Unshare(unix.CLONE_NEWNET)
 	if switchErr.err != nil {
@@ -75,16 +86,17 @@ func switchNetworkNamespace(target string, errChan chan<- switchError) {
 		return
 	}
 
-	newNetworkNamespace, switchErr.err = getCurrentNetworkNamespace()
+	newNetNsPath, newNetNsInode, switchErr.err = getCurrentNetworkNamespace()
 	if switchErr.err != nil {
 		switchErr.errNo = switchErrGetNewNamespace
 		errChan <- switchErr
 		return
 	}
+	glog.V(4).Infof("new OSThread netns: %q -> %q", newNetNsPath, newNetNsInode)
 
-	switchErr.err = unix.Mount(newNetworkNamespace, target, "none", unix.MS_BIND, "")
+	switchErr.err = unix.Mount(newNetNsPath, target, "none", unix.MS_BIND, "")
 	if switchErr.err != nil {
-		glog.Errorf("fail to mount %s to %s: %s", newNetworkNamespace, target, switchErr.err)
+		glog.Errorf("fail to mount %s to %s: %s", newNetNsPath, target, switchErr.err)
 		switchErr.errNo = switchErrMountNewNamespace
 		errChan <- switchErr
 	}
