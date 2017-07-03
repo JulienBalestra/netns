@@ -101,7 +101,9 @@ func cleanNetworkNamespaceRessources(target string, errSwitch switchError) {
 		}
 	}
 	err := os.Remove(target)
-	glog.Errorf("fail to remove networkNamespaceTarget %s: %s", target, err)
+	if err != nil {
+		glog.Errorf("fail to remove networkNamespaceTarget %s: %s", target, err)
+	}
 }
 
 func CreateNetworkNamespace(name string) (err error) {
