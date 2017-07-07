@@ -9,15 +9,7 @@ import (
 	"runtime"
 )
 
-const (
-	networkNamespaceDirectory = "/var/run/netns"
-
-	switchErrNil = iota
-	switchErrCloneNewNamespace
-	switchErrGetOriginNamespace
-	switchErrGetNewNamespace
-	switchErrMountNewNamespace
-)
+const networkNamespaceDirectory = "/var/run/netns"
 
 type switchError struct {
 	err   error
@@ -61,61 +53,40 @@ func getCurrentNetworkNamespace() (netnsPath string, netnsInode string, err erro
 	return netnsPath, netnsInode, nil
 }
 
-// This function needs to run as Routine to creates a new network namespace without continue to use it
-// Errors are sent to channel
-func switchNetworkNamespace(target string, errChan chan<- switchError) {
-	var switchErr switchError
+// create a new network namespace and mount it to the target in argument
+func switchNetworkNamespace(target string) error {
 	var newNetNsPath, newNetNsInode, originNetNsPath, originNetNsInode string
-
-	// Avoid changing thread
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
-	originNetNsPath, originNetNsInode, switchErr.err = getCurrentNetworkNamespace()
-	if switchErr.err != nil {
-		switchErr.errNo = switchErrGetOriginNamespace
-		errChan <- switchErr
-		return
+	originNetNsPath, originNetNsInode, err := getCurrentNetworkNamespace()
+	if err != nil {
+		return err
 	}
-	glog.V(4).Infof("origin OSThread netns: %q -> %q", originNetNsPath, originNetNsInode)
+	glog.V(4).Infof("origin netns: %q -> %q", originNetNsPath, originNetNsInode)
 
-	switchErr.err = unix.Unshare(unix.CLONE_NEWNET)
-	if switchErr.err != nil {
-		glog.Errorf("fail unix.CLONE_NEWNET for %s: %s", target, switchErr.err)
-		switchErr.errNo = switchErrCloneNewNamespace
-		errChan <- switchErr
-		return
+	err = unix.Unshare(unix.CLONE_NEWNET)
+	if err != nil {
+		glog.Errorf("fail unix.CLONE_NEWNET for %s: %s", target, err)
+		return err
 	}
 
-	newNetNsPath, newNetNsInode, switchErr.err = getCurrentNetworkNamespace()
-	if switchErr.err != nil {
-		switchErr.errNo = switchErrGetNewNamespace
-		errChan <- switchErr
-		return
+	newNetNsPath, newNetNsInode, err = getCurrentNetworkNamespace()
+	if err != nil {
+		return err
 	}
-	glog.V(4).Infof("new OSThread netns: %q -> %q", newNetNsPath, newNetNsInode)
+	glog.V(4).Infof("new netns: %q -> %q", newNetNsPath, newNetNsInode)
 
-	switchErr.err = unix.Mount(newNetNsPath, target, "none", unix.MS_BIND, "")
-	if switchErr.err != nil {
-		glog.Errorf("fail to mount %s to %s: %s", newNetNsPath, target, switchErr.err)
-		switchErr.errNo = switchErrMountNewNamespace
-		errChan <- switchErr
-	}
-	switchErr.err = nil
-	switchErr.errNo = switchErrNil
-	errChan <- switchErr
-}
-
-func cleanNetworkNamespaceRessources(target string, errSwitch switchError) {
-	if errSwitch.errNo == switchErrMountNewNamespace {
+	err = unix.Mount(newNetNsPath, target, "none", unix.MS_BIND, "")
+	if err != nil {
+		glog.Errorf("fail to mount %s to %s: %s", newNetNsPath, target, err)
 		err := unix.Unmount(target, unix.MNT_DETACH)
 		if err != nil {
 			glog.Errorf("fail to unmount %s during error handling raise %s", target, err)
 		}
+		return err
 	}
-	err := os.Remove(target)
-	if err != nil {
-		glog.Errorf("fail to remove networkNamespaceTarget %s: %s", target, err)
-	}
+	return nil
 }
 
 func CreateNetworkNamespace(name string) (err error) {
@@ -126,15 +97,12 @@ func CreateNetworkNamespace(name string) (err error) {
 		return err
 	}
 	glog.V(4).Infof("created networkNamespaceTarget %q", nsTarget)
-
-	errChan := make(chan switchError, 1)
-	defer close(errChan)
-
-	go switchNetworkNamespace(nsTarget, errChan)
-	errSwitch := <-errChan
-	if errSwitch.errNo != switchErrNil {
-		cleanNetworkNamespaceRessources(nsTarget, errSwitch)
+	err = switchNetworkNamespace(nsTarget)
+	if err != nil {
+		errRemove := os.Remove(nsTarget)
+		if errRemove != nil {
+			glog.Errorf("fail to remove networkNamespaceTarget %s: %s", nsTarget, errRemove)
+		}
 	}
-
-	return errSwitch.err
+	return err
 }
