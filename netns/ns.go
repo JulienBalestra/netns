@@ -1,5 +1,8 @@
 package netns
 
+//#include <unistd.h>
+import "C"
+
 import (
 	"fmt"
 	"github.com/golang/glog"
@@ -7,14 +10,10 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"syscall"
 )
 
 const networkNamespaceDirectory = "/var/run/netns"
-
-type switchError struct {
-	err   error
-	errNo int
-}
 
 // If missing, creates a directory to store netns targets
 func InitNetworkNamespaceDirectory() error {
@@ -53,7 +52,7 @@ func getCurrentNetworkNamespace() (netnsPath string, netnsInode string, err erro
 	return netnsPath, netnsInode, nil
 }
 
-// create a new network namespace and mount it to the target in argument
+// Create a new network namespace and mount it to the target in argument
 func switchNetworkNamespace(target string) error {
 	var newNetNsPath, newNetNsInode, originNetNsPath, originNetNsInode string
 	runtime.LockOSThread()
@@ -89,6 +88,7 @@ func switchNetworkNamespace(target string) error {
 	return nil
 }
 
+// Create a new network namespace with the name passed in parameter
 func CreateNetworkNamespace(name string) (err error) {
 	nsTarget := path.Join(networkNamespaceDirectory, name)
 	err = createNetworkNamespaceTarget(nsTarget)
@@ -105,4 +105,24 @@ func CreateNetworkNamespace(name string) (err error) {
 		}
 	}
 	return err
+}
+
+// Create a new network namespace in a dedicated process without switching on it
+func CreateNetworkNamespaceInFork(name string) (err error) {
+	pid := C.fork()
+	if pid == 0 {
+		err = CreateNetworkNamespace(name)
+		if err != nil {
+			glog.Errorf("exiting on error during namespace creation: %q", err)
+			os.Exit(3)
+		}
+		os.Exit(0)
+	}
+	var wait syscall.WaitStatus
+	wait = 0
+	syscall.Wait4(int(pid), &wait, 0, nil)
+	if wait.ExitStatus() != 0 {
+		return fmt.Errorf("fail to create NetworkNamespace")
+	}
+	return nil
 }
