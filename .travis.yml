@@ -1,10 +1,19 @@
 language: go
 
+sudo: required
+dist: trusty
+
 go:
   - 1.7.5
 
 os:
   - linux
 
+install:
+  - go build -o bin
+
 script:
-  - go build main.go
+  - sudo -E ${GOROOT}/bin/go test -v ./netns/
+  - sudo ./bin -name travis
+  - ls -l /run/netns/travis
+  - sudo ip netns exec travis ip a
