@@ -25,7 +25,7 @@ func TestCreateNetworkNamespaceTarget(t *testing.T) {
 }
 
 func TestGetCurrentNetworkNamespace(t *testing.T) {
-	ns, inode, err := getCurrentNetworkNamespace()
+	ns, ref, err := getCurrentNetworkNamespace()
 	if err != nil {
 		t.Errorf("%s", err)
 	}
@@ -37,8 +37,8 @@ func TestGetCurrentNetworkNamespace(t *testing.T) {
 	if err != nil {
 		t.Errorf("%s", err)
 	}
-	if inode == "" {
-		t.Errorf("inode == %s", inode)
+	if ref == "" {
+		t.Errorf("ref == %s", ref)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestCreateNetworkNamespaceInFork(t *testing.T) {
 	if err != nil {
 		t.Errorf("%s", err)
 	}
-	ns, inode, err := getCurrentNetworkNamespace()
+	ns, ref, err := getCurrentNetworkNamespace()
 	if err != nil {
 		t.Errorf("%s", err)
 	}
@@ -57,14 +57,14 @@ func TestCreateNetworkNamespaceInFork(t *testing.T) {
 	if err != nil {
 		t.Errorf("%s", err)
 	}
-	newNs, newInode, err := getCurrentNetworkNamespace()
+	newNs, newRef, err := getCurrentNetworkNamespace()
 	if err != nil {
 		t.Errorf("%s", err)
 	}
 	if newNs != ns {
 		t.Errorf("%s != %s", newNs, ns)
 	}
-	if newInode != inode {
-		t.Errorf("%s != %s", newInode, inode)
+	if newRef != ref {
+		t.Errorf("%s != %s", newRef, ref)
 	}
 }

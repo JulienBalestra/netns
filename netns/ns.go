@@ -42,27 +42,27 @@ func createNetworkNamespaceTarget(path string) error {
 }
 
 // Get the current network namespace absolute FS path
-func getCurrentNetworkNamespace() (netnsPath string, netnsInode string, err error) {
+func getCurrentNetworkNamespace() (netnsPath string, netnsRef string, err error) {
 	netnsPath = fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
-	netnsInode, err = os.Readlink(netnsPath)
+	netnsRef, err = os.Readlink(netnsPath)
 	if err != nil {
 		glog.Errorf("fail to get current networkNamespace %q: %s", netnsPath, err)
-		return netnsPath, netnsInode, err
+		return netnsPath, netnsRef, err
 	}
-	return netnsPath, netnsInode, nil
+	return netnsPath, netnsRef, nil
 }
 
 // Create a new network namespace and mount it to the target in argument
 func switchNetworkNamespace(target string) error {
-	var newNetNsPath, newNetNsInode, originNetNsPath, originNetNsInode string
+	var newNetNsPath, newNetNsRef, originNetNsPath, originNetNsRef string
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	originNetNsPath, originNetNsInode, err := getCurrentNetworkNamespace()
+	originNetNsPath, originNetNsRef, err := getCurrentNetworkNamespace()
 	if err != nil {
 		return err
 	}
-	glog.V(4).Infof("origin netns: %q -> %q", originNetNsPath, originNetNsInode)
+	glog.V(4).Infof("origin netns: %q -> %q", originNetNsPath, originNetNsRef)
 
 	err = unix.Unshare(unix.CLONE_NEWNET)
 	if err != nil {
@@ -70,11 +70,11 @@ func switchNetworkNamespace(target string) error {
 		return err
 	}
 
-	newNetNsPath, newNetNsInode, err = getCurrentNetworkNamespace()
+	newNetNsPath, newNetNsRef, err = getCurrentNetworkNamespace()
 	if err != nil {
 		return err
 	}
-	glog.V(4).Infof("new netns: %q -> %q", newNetNsPath, newNetNsInode)
+	glog.V(4).Infof("new netns: %q -> %q", newNetNsPath, newNetNsRef)
 
 	err = unix.Mount(newNetNsPath, target, "none", unix.MS_BIND, "")
 	if err != nil {
